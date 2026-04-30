@@ -1,5 +1,6 @@
 use kvm_ioctls::{Kvm, VmFd};
 
+#[allow(dead_code)]
 pub struct SymbioteHypervisor {
     kvm: Kvm,
     pub vm: VmFd,
@@ -16,6 +17,7 @@ impl SymbioteHypervisor {
     }
 
     // This will eventually hold the MalQwen analysis hooks
+    #[allow(dead_code)]
     pub fn peek_guest_memory(&self, _guest_addr: u64, size: usize) -> Vec<u8> {
         // Placeholder for memory introspection logic
         vec![0; size]

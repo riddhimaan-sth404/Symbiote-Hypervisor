@@ -1,9 +1,35 @@
-use std::num::NonZeroUsize;
-use nix::sys::mman::{mmap, MapFlags, ProtFlags};
-use std::os::unix::io::BorrowedFd;
 use kvm_bindings::kvm_userspace_memory_region;
 
-pub fn setup_guest_memory(vm: &kvm_ioctls::VmFd, guest_addr: u64, size: usize) {
+/// Guest memory region information
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct GuestMemoryRegion {
+    pub host_addr: u64,
+    pub guest_addr: u64,
+    pub size: usize,
+}
+
+impl GuestMemoryRegion {
+    /// Write data into guest memory at a specific offset
+    #[allow(dead_code)]
+    pub fn write_at(&self, offset: u64, data: &[u8]) {
+        unsafe {
+            let dest = (self.host_addr + offset) as *mut u8;
+            std::ptr::copy_nonoverlapping(data.as_ptr(), dest, data.len());
+        }
+    }
+
+    /// Read data from guest memory at a specific offset
+    #[allow(dead_code)]
+    pub fn read_at(&self, offset: u64, len: usize) -> Vec<u8> {
+        unsafe {
+            let src = (self.host_addr + offset) as *const u8;
+            std::slice::from_raw_parts(src, len).to_vec()
+        }
+    }
+}
+
+pub fn setup_guest_memory(vm: &kvm_ioctls::VmFd, guest_addr: u64, size: usize) -> GuestMemoryRegion {
     // 1. Map host memory using raw libc for anonymous mapping
     let host_addr = unsafe {
         libc::mmap(
@@ -33,5 +59,12 @@ pub fn setup_guest_memory(vm: &kvm_ioctls::VmFd, guest_addr: u64, size: usize) {
         vm.set_user_memory_region(region).expect("Failed to set guest memory");
     }
     
-    println!("[+] Guest memory region mapped at 0x{:x} ({}MB)", host_addr as u64, size / 1024 / 1024);
+    let host_addr_u64 = host_addr as u64;
+    println!("[+] Guest memory region mapped at 0x{:x} ({}MB)", host_addr_u64, size / 1024 / 1024);
+    
+    GuestMemoryRegion {
+        host_addr: host_addr_u64,
+        guest_addr,
+        size,
+    }
 }

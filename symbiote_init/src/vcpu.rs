@@ -1,5 +1,5 @@
 use kvm_ioctls::VcpuFd;
-use kvm_bindings::{kvm_regs, kvm_sregs};
+use kvm_bindings::kvm_regs;
 
 pub struct SymbioteCPU {
     pub fd: VcpuFd,
@@ -29,23 +29,50 @@ impl SymbioteCPU {
 
     pub fn run_loop(&mut self) {
         println!("[*] Symbiote Sentry: Entering vCPU Run Loop...");
+        let mut exit_count = 0;
+        
         loop {
             match self.fd.run().expect("[-] vCPU run failed") {
                 kvm_ioctls::VcpuExit::IoIn(addr, _data) => {
-                    println!("[>] Guest Port Read: 0x{:x}", addr);
+                    exit_count += 1;
+                    println!("[Exit #{}] Guest Port Read: 0x{:x}", exit_count, addr);
                 }
                 kvm_ioctls::VcpuExit::IoOut(addr, data) => {
-                    println!("[<] Guest Port Write: 0x{:x} (Data: {:?})", addr, data);
+                    exit_count += 1;
+                    println!("[Exit #{}] Guest Port Write: 0x{:x} (Data: {:?})", exit_count, addr, data);
+                    
+                    // Debug port 0xE9 - common hypervisor debug output
+                    if addr == 0xe9 && data.len() == 1 {
+                        println!("  [DEBUG OUTPUT] 0x{:02x} ('{}')", data[0], 
+                            if data[0] >= 32 && data[0] < 127 { 
+                                data[0] as char 
+                            } else { 
+                                '.' 
+                            }
+                        );
+                    }
                 }
                 kvm_ioctls::VcpuExit::Hlt => {
-                    println!("[!] Guest Halted. Suspending core.");
+                    exit_count += 1;
+                    println!("[Exit #{}] Guest Halted. Suspending core.", exit_count);
                     break;
                 }
+                kvm_ioctls::VcpuExit::MmioWrite(addr, data) => {
+                    exit_count += 1;
+                    println!("[Exit #{}] MMIO Write: 0x{:x} (Data: {:?})", exit_count, addr, data);
+                }
+                kvm_ioctls::VcpuExit::MmioRead(addr, _data) => {
+                    exit_count += 1;
+                    println!("[Exit #{}] MMIO Read: 0x{:x}", exit_count, addr);
+                }
                 exit_reason => {
-                    println!("[?] Unhandled VM Exit: {:?}", exit_reason);
-                    break;
+                    exit_count += 1;
+                    println!("[Exit #{}] Unhandled VM Exit: {:?}", exit_count, exit_reason);
+                    // Don't break for other exits - could be legitimate
                 }
             }
         }
+        
+        println!("[+] vCPU loop completed after {} exits", exit_count);
     }
 }

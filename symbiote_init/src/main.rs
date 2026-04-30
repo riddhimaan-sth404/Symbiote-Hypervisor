@@ -1,10 +1,13 @@
 mod kvm;
 mod memory;
 mod vcpu;
+mod guest_loader;
+mod reflex_engine;
 
 use nix::mount::{mount, MsFlags};
 use std::process::Command;
 use std::path::Path;
+use guest_loader::GuestBinary;
 
 fn main() {
     println!("========================================");
@@ -15,20 +18,37 @@ fn main() {
     prepare_filesystem();
 
     // 2. Hardware Check: Is KVM available?
-    if Path::new("/dev/kvm").exists() {
-        println!("[+] KVM Hypervisor detected.");
-    } else {
+    if !Path::new("/dev/kvm").exists() {
         println!("[!] FATAL: KVM not found. Check kernel config.");
         loop {} // Halt if we can't virtualize
     }
+    println!("[+] KVM Hypervisor detected.");
 
     // 3. Setup Networking (Host Side)
     setup_host_network();
 
-    // 4. Launch the "Reflex Engine" (Your C-based KVM logic)
-    // For now, we drop to a shell so you can debug.
-    println!("[*] Entering System Shell...");
-    let _ = Command::new("/bin/sh").spawn().expect("Failed to start shell").wait();
+    // 4. Initialize Hypervisor and Load Guest Code
+    println!("[*] Initializing Symbiote Hypervisor...");
+    
+    // Create VM instance
+    let hypervisor = kvm::SymbioteHypervisor::new();
+    
+    // Setup guest memory (64MB)
+    let guest_mem_region = memory::setup_guest_memory(&hypervisor.vm, 0x0, 64 * 1024 * 1024);
+    
+    // Load guest code
+    let guest_binary = GuestBinary::test_stub();
+    guest_binary.load_into_memory(guest_mem_region.host_addr, 0x1000);
+    
+    // Setup vCPU with guest memory info
+    let mut vcpu = vcpu::SymbioteCPU::new(&hypervisor.vm);
+    vcpu.setup_registers();
+    
+    // 5. Execute Hypervisor Loop
+    println!("[*] Launching Symbiote Sentry Engine...");
+    vcpu.run_loop();
+    
+    println!("[!] Hypervisor loop exited. System halted.");
 }
 
 fn prepare_filesystem() {
