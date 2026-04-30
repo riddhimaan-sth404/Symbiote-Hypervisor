@@ -1,0 +1,10 @@
+[package]
+name = "symbiote_init"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nix = { version = "0.27", features = ["mount", "process", "fs", "mman"] }
+kvm-ioctls = "0.19"
+kvm-bindings = "0.10"
+libc = "0.2"
