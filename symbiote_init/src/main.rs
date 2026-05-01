@@ -3,11 +3,13 @@ mod memory;
 mod vcpu;
 mod guest_loader;
 mod reflex_engine;
+mod binary_loader;
+mod advanced_exit_handler;
 
 use nix::mount::{mount, MsFlags};
 use std::process::Command;
 use std::path::Path;
-use guest_loader::GuestBinary;
+use binary_loader::{GuestPayload, PayloadBatcher};
 
 fn main() {
     println!("========================================");
@@ -33,14 +35,41 @@ fn main() {
     // Create VM instance
     let hypervisor = kvm::SymbioteHypervisor::new();
     
-    // Setup guest memory (64MB)
-    let guest_mem_region = memory::setup_guest_memory(&hypervisor.vm, 0x0, 64 * 1024 * 1024);
+    // Setup guest memory (1GB for advanced testing)
+    let guest_mem_size = 1024 * 1024 * 1024; // 1GB
+    let guest_mem_region = memory::setup_guest_memory(&hypervisor.vm, 0x0, guest_mem_size);
     
-    // Load guest code
-    let guest_binary = GuestBinary::test_stub();
-    guest_binary.load_into_memory(guest_mem_region.host_addr, 0x1000);
+    // ===== BINARY LOADER: Select Payload =====
+    // Multiple payload options for testing:
+    // 1. Debug stub - Simple infinite loop
+    // 2. Bootloader - Boot sequence code
+    // 3. Test program - Complex instruction set
+    
+    let mut payload_batcher = PayloadBatcher::new();
+    
+    // Load test program (exercises various instruction types)
+    let test_payload = GuestPayload::test_program();
+    payload_batcher.add(test_payload);
+    
+    // Add debug stub for fallback
+    let debug_payload = GuestPayload::debug_stub();
+    payload_batcher.add(debug_payload);
+    
+    // Load all payloads into guest memory
+    println!("[*] Loading guest payloads...");
+    match payload_batcher.load_all(guest_mem_region.host_addr) {
+        Ok(()) => {
+            payload_batcher.list();
+            println!("[+] All payloads loaded successfully at guest:0x1000");
+        }
+        Err(e) => {
+            println!("[!] Failed to load payloads: {}", e);
+            loop {} // Halt on fatal error
+        }
+    }
     
     // Setup vCPU with guest memory info
+    println!("[*] Configuring vCPU 0...");
     let mut vcpu = vcpu::SymbioteCPU::new(&hypervisor.vm);
     vcpu.setup_registers();
     
