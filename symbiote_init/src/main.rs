@@ -84,16 +84,31 @@ fn prepare_filesystem() {
     let none: Option<&str> = None;
     
     // Mount /proc, /sys, and /dev
-    mount(Some("proc"), "/proc", Some("proc"), MsFlags::empty(), none).ok();
-    mount(Some("sysfs"), "/sys", Some("sysfs"), MsFlags::empty(), none).ok();
-    // devtmpfs should be automounted by kernel, but we ensure it here
-    mount(Some("devtmpfs"), "/dev", Some("devtmpfs"), MsFlags::empty(), none).ok();
+    match mount(Some("proc"), "/proc", Some("proc"), MsFlags::empty(), none) {
+        Ok(()) => println!("[+] /proc mounted"),
+        Err(e) => println!("[!] Failed to mount /proc: {}", e),
+    }
     
-    println!("[+] Kernel filesystems mounted.");
+    match mount(Some("sysfs"), "/sys", Some("sysfs"), MsFlags::empty(), none) {
+        Ok(()) => println!("[+] /sys mounted"),
+        Err(e) => println!("[!] Failed to mount /sys: {}", e),
+    }
+    
+    // devtmpfs should be automounted by kernel, but we ensure it here
+    match mount(Some("devtmpfs"), "/dev", Some("devtmpfs"), MsFlags::empty(), none) {
+        Ok(()) => println!("[+] /dev mounted"),
+        Err(e) => println!("[!] Failed to mount /dev: {}", e),
+    }
+    
+    println!("[+] Kernel filesystems initialization complete.");
 }
 
 fn setup_host_network() {
-    // Bring up loopback
-    let _ = Command::new("/bin/ifconfig").args(["lo", "127.0.0.1", "up"]).status();
+    // Bring up loopback (try multiple tools as fallback)
+    let result = Command::new("ip").args(["link", "set", "lo", "up"]).status();
+    if result.is_err() {
+        // Fallback: ifconfig might not exist, just skip
+        println!("[*] Loopback configuration skipped (ip command not available)");
+    }
     println!("[+] Networking initialized.");
 }
